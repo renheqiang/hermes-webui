@@ -166,8 +166,8 @@ def handle_get(handler, parsed) -> bool:
             .replace('{{LOGIN_SUBTITLE}}', _html.escape(_login_strings['subtitle']))
             .replace('{{LOGIN_PLACEHOLDER}}', _html.escape(_login_strings['placeholder']))
             .replace('{{LOGIN_BTN}}', _html.escape(_login_strings['btn']))
-            .replace('{{LOGIN_INVALID_PW}}', _login_strings['invalid_pw'])  # JS string, escape carefully
-            .replace('{{LOGIN_CONN_FAILED}}', _login_strings['conn_failed'])
+            .replace('{{LOGIN_INVALID_PW}}', _login_strings['invalid_pw'].replace('\\','\\\\').replace("'","\\'"))
+            .replace('{{LOGIN_CONN_FAILED}}', _login_strings['conn_failed'].replace('\\','\\\\').replace("'","\\'"))
         )
         return t(handler, _page, content_type='text/html; charset=utf-8')
 
