@@ -906,6 +906,20 @@ def handle_post(handler, parsed) -> bool:
             handler, {"ok": True, "session": s.compact() | {"messages": s.messages}}
         )
 
+    if parsed.path == "/api/session/retry":
+        try:
+            require(body, "session_id")
+        except ValueError as e:
+            return bad(handler, str(e))
+        try:
+            from api.session_ops import retry_last
+            result = retry_last(body["session_id"])
+            return j(handler, {"ok": True, **result})
+        except KeyError:
+            return bad(handler, "Session not found", 404)
+        except ValueError as e:
+            return j(handler, {"error": str(e)})
+
     if parsed.path == "/api/chat/start":
         return _handle_chat_start(handler, body)
 
