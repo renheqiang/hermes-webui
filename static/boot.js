@@ -674,6 +674,8 @@ function applyBotName(){
   await populateModelDropdown();
   // Load slash command registry from /api/commands (sources hermes-agent COMMAND_REGISTRY)
   await bootCommands();
+  // Apply wallpaper background (decorative — no await, slow load is fine)
+  if(typeof applyWallpaper === 'function') applyWallpaper();
   // Restore last-used model preference
   const savedModel=localStorage.getItem('hermes-webui-model');
   if(savedModel && $('modelSelect')){
