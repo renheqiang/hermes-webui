@@ -229,3 +229,82 @@ def test_http_delete_wallpaper_clears_file_and_settings():
     info_status, _hdrs, info_body = _get_raw('/api/wallpaper/info')
     info = json.loads(info_body)
     assert info['has_wallpaper'] is False
+
+
+# ── settings: wallpaper_brightness ─────────────────────────────────────────
+
+def test_settings_brightness_default_and_save():
+    """save_settings accepts a valid brightness in range [0.1, 1.5]."""
+    resp = _post(TEST_BASE, '/api/settings', {'wallpaper_brightness': 0.5})
+    # /api/settings returns the merged settings as the full object
+    assert resp.get('wallpaper_brightness') == 0.5
+
+    # /info should reflect the new brightness
+    info_status, _hdrs, info_body = _get_raw('/api/wallpaper/info')
+    assert json.loads(info_body)['brightness'] == 0.5
+
+    # Reset for other tests
+    _post(TEST_BASE, '/api/settings', {'wallpaper_brightness': 0.6})
+
+
+def test_settings_brightness_out_of_range_silently_ignored():
+    """Out-of-range values are silently kept-as-old (existing webui convention)."""
+    _post(TEST_BASE, '/api/settings', {'wallpaper_brightness': 0.5})
+    # Try out-of-range
+    _post(TEST_BASE, '/api/settings', {'wallpaper_brightness': 2.0})
+    # Should still be 0.5
+    info_status, _hdrs, info_body = _get_raw('/api/wallpaper/info')
+    assert json.loads(info_body)['brightness'] == 0.5
+
+    # Wrong type (string) also ignored
+    _post(TEST_BASE, '/api/settings', {'wallpaper_brightness': 'foo'})
+    info_status, _hdrs, info_body = _get_raw('/api/wallpaper/info')
+    assert json.loads(info_body)['brightness'] == 0.5
+
+    # Reset
+    _post(TEST_BASE, '/api/settings', {'wallpaper_brightness': 0.6})
+
+
+def test_concurrent_settings_writes_dont_lose_fields():
+    """Two simultaneous /api/settings writes (one for theme, one for brightness)
+    must both persist. Without the write lock the second-to-finish would clobber
+    the other's just-loaded copy.
+    """
+    import threading
+
+    # Pin known starting state
+    _post(TEST_BASE, '/api/settings', {'theme': 'dark', 'wallpaper_brightness': 0.6})
+
+    errors = []
+
+    def write_theme():
+        try:
+            _post(TEST_BASE, '/api/settings', {'theme': 'light'})
+        except Exception as e:
+            errors.append(('theme', e))
+
+    def write_brightness():
+        try:
+            _post(TEST_BASE, '/api/settings', {'wallpaper_brightness': 0.4})
+        except Exception as e:
+            errors.append(('brightness', e))
+
+    # Fire both nearly simultaneously
+    t1 = threading.Thread(target=write_theme)
+    t2 = threading.Thread(target=write_brightness)
+    t1.start(); t2.start()
+    t1.join(); t2.join()
+    assert errors == []
+
+    # Both fields must have stuck
+    info_status, _hdrs, info_body = _get_raw('/api/wallpaper/info')
+    assert json.loads(info_body)['brightness'] == 0.4
+
+    # Re-fetch full settings via the existing GET to verify theme too
+    settings_status, _hdrs, settings_body = _get_raw('/api/settings')
+    settings = json.loads(settings_body)
+    assert settings['theme'] == 'light'
+    assert settings['wallpaper_brightness'] == 0.4
+
+    # Reset
+    _post(TEST_BASE, '/api/settings', {'theme': 'dark', 'wallpaper_brightness': 0.6})

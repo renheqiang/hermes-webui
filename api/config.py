@@ -1226,6 +1226,7 @@ _SETTINGS_DEFAULTS = {
     "notifications_enabled": False,  # browser notification when tab is in background
     "bubble_layout": False,  # right-aligned user / left-aligned assistant chat bubbles
     "wallpaper_file": None,  # filename of current wallpaper in STATE_DIR; None = no wallpaper
+    "wallpaper_brightness": 0.6,  # CSS filter brightness multiplier applied to wallpaper [0.1, 1.5]
     "password_hash": None,  # PBKDF2-HMAC-SHA256 hash; None = auth disabled
 }
 _SETTINGS_LEGACY_DROP_KEYS = {"assistant_language"}
@@ -1261,6 +1262,10 @@ _SETTINGS_ALLOWED_KEYS = set(_SETTINGS_DEFAULTS.keys()) - {"password_hash"}
 _SETTINGS_ENUM_VALUES = {
     "send_key": {"enter", "ctrl+enter"},
 }
+# Float-range validators: key -> (min, max) inclusive.
+_SETTINGS_FLOAT_RANGES = {
+    "wallpaper_brightness": (0.1, 1.5),
+}
 _SETTINGS_BOOL_KEYS = {
     "onboarding_completed",
     "show_token_usage",
@@ -1274,49 +1279,61 @@ _SETTINGS_BOOL_KEYS = {
 # Language codes are validated as short alphanumeric BCP-47-like tags (e.g. 'en', 'zh', 'fr')
 _SETTINGS_LANG_RE = __import__("re").compile(r"^[a-zA-Z]{2,10}(-[a-zA-Z0-9]{2,8})?$")
 
+_SETTINGS_WRITE_LOCK = threading.Lock()
+
 
 def save_settings(settings: dict) -> dict:
     """Save settings to disk. Returns the merged settings. Ignores unknown keys."""
-    current = load_settings()
-    # Handle _set_password: hash and store as password_hash
-    raw_pw = settings.pop("_set_password", None)
-    if raw_pw and isinstance(raw_pw, str) and raw_pw.strip():
-        # Use PBKDF2 from auth module (600k iterations) -- never raw SHA-256
-        from api.auth import _hash_password
+    with _SETTINGS_WRITE_LOCK:
+        current = load_settings()
+        # Handle _set_password: hash and store as password_hash
+        raw_pw = settings.pop("_set_password", None)
+        if raw_pw and isinstance(raw_pw, str) and raw_pw.strip():
+            # Use PBKDF2 from auth module (600k iterations) -- never raw SHA-256
+            from api.auth import _hash_password
 
-        current["password_hash"] = _hash_password(raw_pw.strip())
-    # Handle _clear_password: explicitly disable auth
-    if settings.pop("_clear_password", False):
-        current["password_hash"] = None
-    for k, v in settings.items():
-        if k in _SETTINGS_ALLOWED_KEYS:
-            # Validate enum-constrained keys
-            if k in _SETTINGS_ENUM_VALUES and v not in _SETTINGS_ENUM_VALUES[k]:
-                continue
-            # Validate language codes (BCP-47-like: 'en', 'zh', 'fr', 'zh-CN')
-            if k == "language" and (
-                not isinstance(v, str) or not _SETTINGS_LANG_RE.match(v)
-            ):
-                continue
-            # Coerce bool keys
-            if k in _SETTINGS_BOOL_KEYS:
-                v = bool(v)
-            current[k] = v
+            current["password_hash"] = _hash_password(raw_pw.strip())
+        # Handle _clear_password: explicitly disable auth
+        if settings.pop("_clear_password", False):
+            current["password_hash"] = None
+        for k, v in settings.items():
+            if k in _SETTINGS_ALLOWED_KEYS:
+                # Validate enum-constrained keys
+                if k in _SETTINGS_ENUM_VALUES and v not in _SETTINGS_ENUM_VALUES[k]:
+                    continue
+                # Validate float-range-constrained keys
+                if k in _SETTINGS_FLOAT_RANGES:
+                    lo, hi = _SETTINGS_FLOAT_RANGES[k]
+                    # bool is a subclass of int -- exclude it explicitly so True (=1.0) doesn't sneak in
+                    if not isinstance(v, (int, float)) or isinstance(v, bool):
+                        continue
+                    if not (lo <= v <= hi):
+                        continue
+                    v = float(v)
+                # Validate language codes (BCP-47-like: 'en', 'zh', 'fr', 'zh-CN')
+                if k == "language" and (
+                    not isinstance(v, str) or not _SETTINGS_LANG_RE.match(v)
+                ):
+                    continue
+                # Coerce bool keys
+                if k in _SETTINGS_BOOL_KEYS:
+                    v = bool(v)
+                current[k] = v
 
-    current["default_workspace"] = str(
-        resolve_default_workspace(current.get("default_workspace"))
-    )
-    SETTINGS_FILE.write_text(
-        json.dumps(current, ensure_ascii=False, indent=2),
-        encoding="utf-8",
-    )
-    # Update runtime defaults so new sessions use them immediately
-    global DEFAULT_MODEL, DEFAULT_WORKSPACE
-    if "default_model" in current:
-        DEFAULT_MODEL = current["default_model"]
-    if "default_workspace" in current:
-        DEFAULT_WORKSPACE = resolve_default_workspace(current["default_workspace"])
-    return current
+        current["default_workspace"] = str(
+            resolve_default_workspace(current.get("default_workspace"))
+        )
+        SETTINGS_FILE.write_text(
+            json.dumps(current, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+        # Update runtime defaults so new sessions use them immediately
+        global DEFAULT_MODEL, DEFAULT_WORKSPACE
+        if "default_model" in current:
+            DEFAULT_MODEL = current["default_model"]
+        if "default_workspace" in current:
+            DEFAULT_WORKSPACE = resolve_default_workspace(current["default_workspace"])
+        return current
 
 
 # Apply saved settings on startup (override env-derived defaults)
