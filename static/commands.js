@@ -348,6 +348,33 @@ async function cmdTitle(args){
   }
 }
 
+async function cmdRetry(){
+  if(!S.session){showToast(t('no_active_session'));return;}
+  // Bridged CLI sessions live in agent's state.db, not webui's JSON store.
+  if(S.session.is_cli_session){showToast(t('cmd_webui_only_session'));return;}
+  const activeSid = S.session.session_id;
+  try{
+    const r = await api('/api/session/retry',{method:'POST',body:JSON.stringify({session_id:activeSid})});
+    if(r && r.error){showToast(r.error);return;}
+    // Race guard: user may have switched sessions during the await.
+    if(!S.session || S.session.session_id !== activeSid) return;
+    // Refetch transcript to keep frontend in sync with the truncation.
+    const data = await api('/api/session?session_id=' + encodeURIComponent(activeSid));
+    if(data && data.session){
+      S.messages = data.session.messages || [];
+      S.toolCalls = [];
+      if(typeof clearLiveToolCards === 'function') clearLiveToolCards();
+      renderMessages();
+    }
+    // Stuff the composer with the previous user text and resend.
+    $('msg').value = r.last_user_text || '';
+    if(typeof autoResize === 'function') autoResize();
+    await send();   // existing pipeline -> /api/chat/start
+  }catch(e){
+    showToast('Retry failed: ' + e.message);
+  }
+}
+
 // ── Autocomplete dropdown ───────────────────────────────────────────────────
 
 let _cmdSelectedIdx=-1;
@@ -418,5 +445,6 @@ HANDLERS.personality = cmdPersonality;
 HANDLERS.skills      = cmdSkills;
 HANDLERS.stop        = cmdStop;
 HANDLERS.title       = cmdTitle;
+HANDLERS.retry       = cmdRetry;
 HANDLERS.usage       = cmdUsage;     // body replaced in Task 7
 // Tasks 3-7 add: stop, title, retry, undo, status
