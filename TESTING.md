@@ -1771,6 +1771,23 @@ Bridged CLI sessions:
 - [ ] Open a CLI-bridged session in webui sidebar (if `show_cli_sessions` setting enabled).
 - [ ] `/retry`, `/undo` toast "该命令仅支持 Web UI 原生会话…" and do nothing.
 
+## Wallpaper (manual checklist)
+
+- [ ] Settings panel shows Wallpaper section under Theme dropdown
+- [ ] Upload JPEG → wallpaper visible immediately, brightness defaults 60%
+- [ ] Upload PNG → works
+- [ ] Upload WebP → works
+- [ ] Drag brightness slider to 30% → live dimming (no Save needed)
+- [ ] Brightness change without Save → close panel via Discard → reverts
+- [ ] Brightness change with Save → close + reopen panel → slider stays at saved value
+- [ ] Page reload → wallpaper + brightness persist
+- [ ] Upload 6MB+ file → toast "too large", original wallpaper unchanged
+- [ ] Rename `.svg` to `.jpg` and upload → toast "must be JPEG/PNG/WebP" (backend magic-byte check)
+- [ ] Upload new image → old image file replaced (`ls ~/.hermes/webui/wallpaper-*` shows only one)
+- [ ] Click Remove → wallpaper disappears, theme color returns
+- [ ] Switch theme (dark → light → slate, etc.) → wallpaper unchanged; theme color is visible fallback when no wallpaper
+- [ ] DevTools Network tab: second `/api/wallpaper?v=<hash>` request hits browser cache (Status 200 from disk cache)
+
 ---
 
 *Last updated: v0.50.44, April 14, 2026*
