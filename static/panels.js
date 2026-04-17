@@ -1068,6 +1068,7 @@ document.addEventListener('drop',e=>{e.preventDefault();dragCounter=0;wrap.class
 
 let _settingsDirty = false;
 let _settingsThemeOnOpen = null; // track theme at open time for discard revert
+let _settingsBrightnessOnOpen = null; // track brightness at open time for discard revert
 let _settingsSection = 'conversation';
 
 function switchSettingsSection(name){
@@ -1154,6 +1155,9 @@ function _revertSettingsPreview(){
     if(typeof _applyTheme==='function') _applyTheme(_settingsThemeOnOpen);
     else document.documentElement.dataset.theme = _settingsThemeOnOpen;
   }
+  if(_settingsBrightnessOnOpen !== null && typeof setBrightness === 'function'){
+    setBrightness(_settingsBrightnessOnOpen * 100);  // setBrightness expects percent
+  }
 }
 
 // Show the "Unsaved changes" bar inside the settings panel
@@ -1221,6 +1225,38 @@ async function loadSettingsPanel(){
     // Theme preference
     const themeSel=$('settingsTheme');
     if(themeSel){themeSel.value=settings.theme||'dark';themeSel.addEventListener('change',_markSettingsDirty,{once:false});}
+    // Wallpaper brightness slider — load value from settings + capture for Discard
+    const wpBrightSlider = $('settingsWallpaperBrightness');
+    if(wpBrightSlider){
+      const dec = (typeof settings.wallpaper_brightness === 'number') ? settings.wallpaper_brightness : 0.6;
+      wpBrightSlider.value = String(Math.round(dec * 100));
+      // Capture the at-open value so Discard can revert the live CSS variable
+      _settingsBrightnessOnOpen = dec;
+      wpBrightSlider.addEventListener('input', (e) => {
+        const pct = parseInt(e.target.value, 10);
+        if(typeof setBrightness === 'function') setBrightness(pct);
+        _markSettingsDirty();
+      });
+    }
+    // Wallpaper file picker — upload immediately on change (not save-gated)
+    const wpFile = $('settingsWallpaperFile');
+    if(wpFile){
+      wpFile.addEventListener('change', async (e) => {
+        const file = e.target.files && e.target.files[0];
+        if(file && typeof uploadWallpaper === 'function'){
+          await uploadWallpaper(file);
+          // Reset the input so re-selecting the same file fires another change event
+          e.target.value = '';
+        }
+      });
+    }
+    // Wallpaper remove button — also immediate (not save-gated)
+    const wpRemove = $('settingsWallpaperRemove');
+    if(wpRemove){
+      wpRemove.onclick = async () => {
+        if(typeof removeWallpaper === 'function') await removeWallpaper();
+      };
+    }
     // Language preference — populate from LOCALES bundle
     const langSel=$('settingsLanguage');
     if(langSel){
@@ -1324,6 +1360,14 @@ async function saveSettings(andClose){
   document.body.classList.toggle('bubble-layout', body.bubble_layout);
   const botName=(($('settingsBotName')||{}).value||'').trim();
   body.bot_name=botName||'Hermes';
+  // Wallpaper brightness: convert slider percent (10..150) back to decimal (0.1..1.5)
+  const wpBrightSlider = $('settingsWallpaperBrightness');
+  if(wpBrightSlider){
+    const pct = parseInt(wpBrightSlider.value, 10);
+    if(!isNaN(pct)){
+      body.wallpaper_brightness = Math.max(0.1, Math.min(1.5, pct / 100));
+    }
+  }
   // Password: only act if the field has content; blank = leave auth unchanged
   if(pw && pw.trim()){
     try{
