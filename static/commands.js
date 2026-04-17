@@ -31,14 +31,22 @@ const WEBUI_ONLY_COMMANDS = [
    subcommands:[], cli_only:false, gateway_only:false},
 ];
 
-// Commands the agent exposes but webui cannot/should not surface.
-// (These are filtered AFTER /api/commands already excludes gateway_only.)
+// Commands the agent exposes but webui cannot meaningfully surface
+// (CLI-only concepts: clipboard pastes, terminal skins, etc.). These are
+// filtered out of the dropdown entirely, AFTER /api/commands already
+// excludes gateway_only commands.
+//
+// NOT included here: deferred commands (/yolo, /reasoning, /fast,
+// /compress). Those DO have meaning in the web UI but their state lives
+// in the agent process and needs an IPC channel to implement properly.
+// We keep them in REGISTRY (so the dropdown shows them) but don't
+// register HANDLERS for them, so executeCommand toasts "not yet
+// supported in web UI" instead of silently forwarding the literal text
+// to the LLM (the failure mode the parity spec calls out as critical).
 const UNSUPPORTED_IN_WEBUI = new Set([
   'voice', 'paste', 'image', 'skin', 'browser',
   'platforms', 'plan', 'config', 'tools', 'toolsets', 'plugins',
   'history', 'save',
-  // Deferred until webui<->agent IPC is designed:
-  'yolo', 'reasoning', 'fast', 'compress',
 ]);
 
 // Minimal fallback if /api/commands fetch fails (network error, agent
