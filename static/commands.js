@@ -322,6 +322,32 @@ async function cmdStop(){
   }
 }
 
+async function cmdTitle(args){
+  if(!S.session){showToast(t('no_active_session'));return;}
+  const name = (args || '').trim();
+  if(!name){
+    // Match agent: print current title.
+    const cur = S.session.title || 'Untitled';
+    S.messages.push({role:'assistant', content:`Current title: **${cur}**\n\nUse \`/title <name>\` to change it.`});
+    renderMessages();
+    return;
+  }
+  try{
+    const r = await api('/api/session/rename',{method:'POST',body:JSON.stringify({
+      session_id:S.session.session_id, title:name
+    })});
+    if(r && r.error){showToast(r.error);return;}
+    // Server returns r.session.title (already truncated to 80 chars).
+    S.session.title = (r && r.session && r.session.title) || name;
+    if(typeof syncTopbar === 'function') syncTopbar();
+    if(typeof renderSessionList === 'function') renderSessionList();
+    showToast(`Title set to "${S.session.title}"`);
+  }catch(e){
+    // api() throws Error with message from {error: ...} body on non-2xx.
+    showToast(t('failed_colon') + e.message);
+  }
+}
+
 // ── Autocomplete dropdown ───────────────────────────────────────────────────
 
 let _cmdSelectedIdx=-1;
@@ -391,5 +417,6 @@ HANDLERS.theme       = cmdTheme;
 HANDLERS.personality = cmdPersonality;
 HANDLERS.skills      = cmdSkills;
 HANDLERS.stop        = cmdStop;
+HANDLERS.title       = cmdTitle;
 HANDLERS.usage       = cmdUsage;     // body replaced in Task 7
 // Tasks 3-7 add: stop, title, retry, undo, status
