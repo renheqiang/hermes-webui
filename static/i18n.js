@@ -96,6 +96,15 @@ const LOCALES = {
     cmd_not_supported_yet: 'Command not yet supported in web UI: ',
     cmd_compress_deferred: '/compress is not available in the web UI yet — use the CLI for now.',
     cmd_webui_only_session: 'This command works on web-UI sessions only (the active session is bridged from the CLI).',
+    // wallpaper.js
+    wallpaper_uploaded: 'Wallpaper applied',
+    wallpaper_removed: 'Wallpaper removed',
+    wallpaper_size_too_large: 'Wallpaper file is too large (max 5MB).',
+    wallpaper_invalid_format: 'Wallpaper must be JPEG, PNG, or WebP.',
+    wallpaper_label: 'Wallpaper',
+    wallpaper_upload: 'Upload image',
+    wallpaper_remove: 'Remove',
+    wallpaper_brightness_label: 'Brightness',
     // ui.js
     no_workspace: 'No workspace',
     dialog_confirm_title: 'Confirm action',
@@ -545,6 +554,15 @@ const LOCALES = {
     cmd_not_supported_yet: 'Comando aún no compatible con la interfaz web: ',
     cmd_compress_deferred: '/compress aún no está disponible en la interfaz web — usa la CLI por ahora.',
     cmd_webui_only_session: 'Este comando funciona solo en sesiones de la interfaz web (la sesión activa proviene de la CLI).',
+    // wallpaper.js
+    wallpaper_uploaded: 'Fondo aplicado',
+    wallpaper_removed: 'Fondo eliminado',
+    wallpaper_size_too_large: 'El archivo es demasiado grande (máx. 5 MB).',
+    wallpaper_invalid_format: 'El fondo debe ser JPEG, PNG o WebP.',
+    wallpaper_label: 'Fondo',
+    wallpaper_upload: 'Subir imagen',
+    wallpaper_remove: 'Quitar',
+    wallpaper_brightness_label: 'Brillo',
     // ui.js
     no_workspace: 'Sin espacio de trabajo',
     // workspace.js
@@ -984,6 +1002,15 @@ const LOCALES = {
     cmd_not_supported_yet: 'Befehl noch nicht in der Web-UI unterstützt: ',
     cmd_compress_deferred: '/compress ist in der Web-UI noch nicht verfügbar — bitte vorerst die CLI verwenden.',
     cmd_webui_only_session: 'Dieser Befehl funktioniert nur mit Web-UI-Sitzungen (die aktive Sitzung stammt aus der CLI).',
+    // wallpaper.js
+    wallpaper_uploaded: 'Hintergrund angewendet',
+    wallpaper_removed: 'Hintergrund entfernt',
+    wallpaper_size_too_large: 'Die Datei ist zu groß (max. 5 MB).',
+    wallpaper_invalid_format: 'Hintergrund muss JPEG, PNG oder WebP sein.',
+    wallpaper_label: 'Hintergrund',
+    wallpaper_upload: 'Bild hochladen',
+    wallpaper_remove: 'Entfernen',
+    wallpaper_brightness_label: 'Helligkeit',
     // ui.js
     no_workspace: 'Kein Workspace',
     dialog_confirm_title: 'Aktion bestätigen',
@@ -1231,6 +1258,15 @@ const LOCALES = {
     cmd_not_supported_yet: 'Web UI \u6682\u672a\u5b9e\u73b0\u8be5\u547d\u4ee4\uff1a',
     cmd_compress_deferred: '/compress \u5728 Web UI \u4e2d\u5c1a\u672a\u53ef\u7528\uff0c\u8bf7\u6682\u65f6\u4f7f\u7528 CLI\u3002',
     cmd_webui_only_session: '\u8be5\u547d\u4ee4\u4ec5\u652f\u6301 Web UI \u539f\u751f\u4f1a\u8bdd\uff08\u5f53\u524d\u4f1a\u8bdd\u6765\u81ea CLI \u6865\u63a5\uff09\u3002',
+    // wallpaper.js
+    wallpaper_uploaded: '壁纸已应用',
+    wallpaper_removed: '壁纸已移除',
+    wallpaper_size_too_large: '壁纸文件过大（最大 5MB）。',
+    wallpaper_invalid_format: '壁纸必须是 JPEG、PNG 或 WebP。',
+    wallpaper_label: '壁纸',
+    wallpaper_upload: '上传图片',
+    wallpaper_remove: '移除',
+    wallpaper_brightness_label: '亮度',
     // ui.js
     no_workspace: '\u672a\u9009\u62e9\u5de5\u4f5c\u533a',
     dialog_confirm_title: '\u786e\u8ba4\u64cd\u4f5c',
@@ -1669,6 +1705,15 @@ const LOCALES = {
     cmd_not_supported_yet: 'Web UI \u66ab\u672a\u5be6\u4f5c\u8a72\u547d\u4ee4\uff1a',
     cmd_compress_deferred: '/compress \u5728 Web UI \u4e2d\u5c1a\u672a\u53ef\u7528\uff0c\u8acb\u66ab\u6642\u4f7f\u7528 CLI\u3002',
     cmd_webui_only_session: '\u8a72\u547d\u4ee4\u50c5\u652f\u63f4 Web UI \u539f\u751f\u5de5\u4f5c\u968e\u6bb5\uff08\u7576\u524d\u5de5\u4f5c\u968e\u6bb5\u4f86\u81ea CLI \u6a4b\u63a5\uff09\u3002',
+    // wallpaper.js
+    wallpaper_uploaded: '桌布已套用',
+    wallpaper_removed: '桌布已移除',
+    wallpaper_size_too_large: '桌布檔案過大（最大 5MB）。',
+    wallpaper_invalid_format: '桌布必須為 JPEG、PNG 或 WebP。',
+    wallpaper_label: '桌布',
+    wallpaper_upload: '上傳圖片',
+    wallpaper_remove: '移除',
+    wallpaper_brightness_label: '亮度',
     // ui.js
     no_workspace: '\u672a\u9078\u64c7\u5de5\u4f5c\u5340',
     // workspace.js
