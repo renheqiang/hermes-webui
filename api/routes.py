@@ -567,6 +567,10 @@ def handle_get(handler, parsed) -> bool:
                 personalities.append({"name": name, "description": desc})
         return j(handler, {"personalities": personalities})
 
+    if parsed.path == "/api/commands":
+        from api.commands import list_commands
+        return j(handler, {"commands": list_commands()})
+
     if parsed.path == "/api/git-info":
         qs = parse_qs(parsed.query)
         sid = qs.get("session_id", [""])[0]
