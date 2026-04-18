@@ -124,6 +124,63 @@ def test_delete_wallpaper_when_unset_is_noop(isolated_state):
     assert get_wallpaper_path() is None
 
 
+def test_save_settings_rejects_arbitrary_wallpaper_file_path(isolated_state, monkeypatch):
+    """save_settings() must reject wallpaper_file values that don't match the
+    'wallpaper-<8 hex>.{jpg,png,webp}' format save_wallpaper() writes.
+
+    Without this guard, a malicious POST /api/settings with
+    {"wallpaper_file": "/etc/passwd"} or {"wallpaper_file": "../../foo.jpg"}
+    would persist, and GET /api/wallpaper would happily serve any image
+    file readable by the webui process from anywhere on disk.
+    """
+    import api.config as config
+
+    # Pre-set a valid wallpaper_file to verify it's preserved when an
+    # invalid value is rejected (rejection should mean "leave as-is",
+    # not "wipe the field").
+    config.save_settings({"wallpaper_file": "wallpaper-deadbeef.jpg"})
+    assert config.load_settings()["wallpaper_file"] == "wallpaper-deadbeef.jpg"
+
+    bad_inputs = [
+        "/etc/passwd",                  # absolute system path
+        "../../etc/passwd",             # relative traversal
+        "../wallpaper-deadbeef.jpg",    # one-up-then-valid-name
+        "wallpaper-deadbeef.svg",       # disallowed extension
+        "wallpaper-DEADBEEF.jpg",       # wrong case (regex is lowercase-only)
+        "wallpaper-12345.jpg",          # wrong digest length (5 chars)
+        "wallpaper-deadbeefcafe.jpg",   # too-long digest
+        "wallpaper-deadbeef.jpg.gz",    # extension suffix
+        "myown.jpg",                    # not a wallpaper-* prefix
+        "",                             # empty string
+        123,                            # wrong type entirely
+        {"file": "x"},                  # dict
+    ]
+
+    for bad in bad_inputs:
+        config.save_settings({"wallpaper_file": bad})
+        assert config.load_settings()["wallpaper_file"] == "wallpaper-deadbeef.jpg", (
+            f"Invalid wallpaper_file value {bad!r} silently overwrote settings"
+        )
+
+    # Setting None must clear the field — "no wallpaper" is a valid state.
+    config.save_settings({"wallpaper_file": None})
+    assert config.load_settings()["wallpaper_file"] is None
+
+
+def test_save_settings_accepts_valid_wallpaper_file(isolated_state):
+    """The format save_wallpaper() actually writes must round-trip cleanly."""
+    import api.config as config
+
+    valid = "wallpaper-a1b2c3d4.png"
+    config.save_settings({"wallpaper_file": valid})
+    assert config.load_settings()["wallpaper_file"] == valid
+
+    for ext in ("jpg", "png", "webp"):
+        name = f"wallpaper-deadbeef.{ext}"
+        config.save_settings({"wallpaper_file": name})
+        assert config.load_settings()["wallpaper_file"] == name
+
+
 # ── HTTP-level tests (against the test subprocess server) ──────────────────
 
 import urllib.request

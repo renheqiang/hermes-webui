@@ -1278,6 +1278,10 @@ _SETTINGS_BOOL_KEYS = {
 }
 # Language codes are validated as short alphanumeric BCP-47-like tags (e.g. 'en', 'zh', 'fr')
 _SETTINGS_LANG_RE = __import__("re").compile(r"^[a-zA-Z]{2,10}(-[a-zA-Z0-9]{2,8})?$")
+# wallpaper_file must match the exact format save_wallpaper() writes:
+# wallpaper-<8 hex chars>.{jpg,png,webp}.  Anchored ^...$ to prevent
+# any path-segment or absolute-path injection via /api/settings.
+_SETTINGS_WALLPAPER_FILE_RE = __import__("re").compile(r"^wallpaper-[0-9a-f]{8}\.(jpg|png|webp)$")
 
 _SETTINGS_WRITE_LOCK = threading.Lock()
 
@@ -1313,6 +1317,17 @@ def save_settings(settings: dict) -> dict:
                 # Validate language codes (BCP-47-like: 'en', 'zh', 'fr', 'zh-CN')
                 if k == "language" and (
                     not isinstance(v, str) or not _SETTINGS_LANG_RE.match(v)
+                ):
+                    continue
+                # Validate wallpaper_file: must be None, or the exact filename
+                # format that save_wallpaper() writes (wallpaper-<8 hex>.{jpg,png,webp}).
+                # Without this guard, a malicious POST /api/settings can store an
+                # arbitrary path/filename and read any image-readable file on disk
+                # via GET /api/wallpaper. (The magic-byte sniff in read_wallpaper
+                # blocks non-image files, but legit images outside STATE_DIR would
+                # otherwise leak.)
+                if k == "wallpaper_file" and v is not None and (
+                    not isinstance(v, str) or not _SETTINGS_WALLPAPER_FILE_RE.match(v)
                 ):
                     continue
                 # Coerce bool keys
