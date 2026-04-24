@@ -57,7 +57,10 @@ def _security_headers(handler):
 
 def _accepts_gzip(handler) -> bool:
     """Check if the client accepts gzip encoding."""
-    ae = handler.headers.get('Accept-Encoding', '')
+    headers = getattr(handler, 'headers', None)
+    if not headers:
+        return False
+    ae = headers.get('Accept-Encoding', '')
     return 'gzip' in ae
 
 
