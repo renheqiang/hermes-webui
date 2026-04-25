@@ -964,6 +964,13 @@ function setBusy(v){
       setTimeout(()=>{
         $('msg').value=next.text||'';
         S.pendingFiles=Array.isArray(next.files)?[...next.files]:[];
+        // Restore model from queued item (sent in /api/chat/start payload)
+        // Note: profile is NOT restored — full profile switch requires server interaction
+        if(next.model&&S.session&&next.model!==S.session.model){
+          S.session.model=next.model;
+          if(typeof _applyModelToDropdown==='function'&&$('modelSelect')) _applyModelToDropdown(next.model,$('modelSelect'));
+          if(typeof syncModelChip==='function') syncModelChip();
+        }
         autoResize();
         renderTray();
         send();
@@ -972,21 +979,309 @@ function setBusy(v){
   }
 }
 
+// ── Queue chip display (Codex Desktop pattern) ─────────────────────────────
+// Queued messages appear as chips inside #queueChips (above the textarea)
+// while pending. When the session fires the queued message it becomes a
+// normal user bubble in the chat — the chip is removed at drain time.
+const _queueRenderKeys={};  // per-session fingerprint to avoid redundant rebuilds
+const _queueCollapsed={};   // per-session: true when user explicitly collapsed the card
+
+function _renderQueueChips(sid){
+  const card=document.getElementById('queueCard');
+  const inner=document.getElementById('queueChips');
+  if(!card||!inner) return;
+  const q=_getSessionQueue(sid,false);
+  const key=q.map(e=>{const t=e&&(e.text||e.message||e.content||'');return(e&&e._queued_at||0)+':'+t.length+':'+t.slice(0,20);}).join('|');
+  if(key===(_queueRenderKeys[sid]||'')&&key!='') return;
+  // Skip re-render if user is actively editing inside the queue panel
+  if(inner.contains(document.activeElement)&&document.activeElement!==inner) return;
+  _queueRenderKeys[sid]=key;
+  inner.innerHTML='';
+  if(!q.length){
+    card.classList.remove('visible');
+    const _msgs=document.getElementById('messages');
+    if(_msgs) _msgs.classList.remove('queue-open');
+    return;
+  }
+  // Respect user-collapsed state — don't reopen if user explicitly hid the card
+  if(_queueCollapsed[sid]){
+    // Update chips content without showing card (so data is fresh if user re-expands)
+    inner.innerHTML='';
+    // fall through to render rows into inner but skip making card visible
+  } else {
+    card.classList.add('visible');
+  }
+  // Push messages area up so content isn't hidden behind the flyout
+  const _msgs=document.getElementById('messages');
+  if(_msgs&&!_queueCollapsed[sid]){
+    _msgs.classList.add('queue-open');
+    // Measure after 350ms transition completes (not mid-animation — height would be wrong)
+    setTimeout(()=>{
+      if(!card.classList.contains('visible')) return;
+      const h=card.getBoundingClientRect().height;
+      if(h>0) _msgs.style.setProperty('--queue-card-height', h+'px');
+      if(typeof scrollToBottom==='function') scrollToBottom();
+    }, 360);
+  }
+
+  function _saveAndRefresh(){
+    const liveQ=_getSessionQueue(sid,false);
+    if(!liveQ.length){delete SESSION_QUEUES[sid];try{sessionStorage.removeItem('hermes-queue-'+sid);}catch(_){}}
+    else{SESSION_QUEUES[sid]=[...liveQ];try{sessionStorage.setItem('hermes-queue-'+sid,JSON.stringify(liveQ));}catch(_){}}
+    delete _queueRenderKeys[sid];
+    updateQueueBadge(sid);
+  }
+
+  // Header (2+ items)
+  if(q.length>1){
+    const header=document.createElement('div');
+    header.className='queue-card-header';
+    const lbl=document.createElement('span');
+    lbl.textContent=typeof t==='function'?t('queued_count',q.length):(q.length===1?'1 queued':`${q.length} queued`);
+    lbl.title='Sends automatically after the current response completes';
+    const actions=document.createElement('span');
+    actions.className='queue-card-header-actions';
+    const hasFiles=q.some(e=>e&&Array.isArray(e.files)&&e.files.length>0);
+    const mergeBtn=document.createElement('button');
+    mergeBtn.className='queue-card-btn';
+    mergeBtn.title='Combine all into one message'+(hasFiles?' — attachments will be removed':'');
+    mergeBtn.innerHTML=li('layers',12)+'Combine';
+    mergeBtn.onclick=()=>{
+      const _doMerge=(snapshot)=>{
+        const combined=snapshot.map(e=>e&&(e.text||e.message||e.content||'')).filter(Boolean).join('\n\n');
+        const liveQ=_getSessionQueue(sid,false);
+        const firstFiles=(snapshot.find(e=>e&&Array.isArray(e.files)&&e.files.length)||{files:[]}).files;
+        liveQ.length=0;liveQ.push({text:combined,files:firstFiles,_queued_at:Date.now()});
+        SESSION_QUEUES[sid]=liveQ;
+        try{sessionStorage.setItem('hermes-queue-'+sid,JSON.stringify(liveQ));}catch(_){}
+        delete _queueRenderKeys[sid];
+        updateQueueBadge(sid);
+      };
+      if(hasFiles){
+        if(typeof showToast==='function') showToast('Attachments on queued items will be removed',2600,'warning');
+      }
+      // Merge from current live queue (no delay — snapshot + defer caused data-loss races)
+      _doMerge([..._getSessionQueue(sid,false)]);
+    };
+    const clearBtn=document.createElement('button');
+    clearBtn.className='queue-card-icon-btn';
+    clearBtn.title='Clear all queued messages';
+    clearBtn.setAttribute('aria-label','Clear all queued messages');
+    clearBtn.innerHTML=li('x',13);
+    clearBtn.onclick=()=>{q.length=0;_saveAndRefresh();};
+    actions.appendChild(mergeBtn);
+    actions.appendChild(clearBtn);
+    // Hide button — collapses flyout entirely; titlebar "N queued" re-shows it
+    const hideBtn=document.createElement('button');
+    hideBtn.className='queue-card-icon-btn';
+    hideBtn.title='Hide queue (click the titlebar badge to show again)';
+    hideBtn.setAttribute('aria-label','Hide queue panel');
+    hideBtn.innerHTML=li('chevron-down',14);
+    hideBtn.onclick=()=>{
+      _queueCollapsed[sid]=true;
+      card.classList.remove('visible');
+      // Read live count at click time (not stale closure q)
+      _updateQueuePill(sid,_getSessionQueue(sid,false).length);
+    };
+    actions.appendChild(hideBtn);
+    header.appendChild(lbl);
+    header.appendChild(actions);
+    inner.appendChild(header);
+  }
+
+  let _dragTs=null;  // use _queued_at timestamp — survives re-renders, not an index
+  q.forEach((entry,i)=>{
+    const _entryTs=entry&&entry._queued_at;
+    const entryText=entry&&(entry.text||entry.message||entry.content||'');
+    const _files=entry&&Array.isArray(entry.files)?entry.files.filter(Boolean):[];
+    const row=document.createElement('div');
+    row.className='queue-card-row';
+    row.setAttribute('role','listitem');
+    row.setAttribute('draggable','true');
+    row.ondragstart=(e)=>{if(_entryTs==null) return;_dragTs=_entryTs;row.style.opacity='.4';e.dataTransfer.effectAllowed='move';};
+    row.ondragend=()=>{row.style.opacity='';};
+    row.ondragover=(e)=>{e.preventDefault();row.style.background='var(--hover-bg)';};
+    row.ondragleave=()=>{row.style.background='';};
+    row.ondrop=(e)=>{
+      e.preventDefault();row.style.background='';
+      if(_dragTs!=null&&_dragTs!==_entryTs){
+        const fromIdx=q.findIndex(e=>e&&e._queued_at===_dragTs);
+        if(fromIdx!==-1&&fromIdx!==i){const moved=q.splice(fromIdx,1)[0];q.splice(i,0,moved);}
+        _dragTs=null;_saveAndRefresh();
+      }
+    };
+    // Drag handle
+    const drag=document.createElement('span');
+    drag.className='queue-card-drag';
+    drag.setAttribute('aria-hidden','true');
+    drag.innerHTML=typeof li==='function'?li('list-todo',13):'≡';
+    // Inline-editable text
+    const msgSpan=document.createElement('span');
+    msgSpan.className='queue-card-text';
+    msgSpan.setAttribute('contenteditable','true');
+    msgSpan.setAttribute('role','textbox');
+    msgSpan.setAttribute('aria-label','Queued message — edit in place');
+    msgSpan.textContent=entryText||(_files.length?'':'—');
+    msgSpan.setAttribute('draggable','false');
+    msgSpan.onfocus=()=>{msgSpan.style.overflow='auto';msgSpan.style.whiteSpace='pre-wrap';msgSpan.style.textOverflow='clip';};
+    msgSpan.onblur=()=>{
+      msgSpan.style.overflow='';msgSpan.style.whiteSpace='';msgSpan.style.textOverflow='';
+      const newText=msgSpan.textContent.trim();
+      if(newText===''&&!_files.length){ msgSpan.textContent=entryText||'—'; return; }
+      if(newText!==entryText){
+        const liveQ=_getSessionQueue(sid,false);
+        const idx=_entryTs!=null?liveQ.findIndex(e=>e&&e._queued_at===_entryTs):i;
+        if(idx!==-1){
+          liveQ[idx]={...liveQ[idx],text:newText};
+          try{sessionStorage.setItem('hermes-queue-'+sid,JSON.stringify(liveQ));}catch(_){}
+          delete _queueRenderKeys[sid];
+          updateQueueBadge(sid);
+        }
+      }
+    };
+    msgSpan.onkeydown=(e)=>{if(e.key==='Enter'){e.preventDefault();msgSpan.blur();}if(e.key==='Escape'){msgSpan.textContent=entryText||'—';msgSpan.blur();}};
+    // Compact badges (files, model, profile)
+    const badges=document.createElement('span');
+    badges.className='queue-card-badges';
+    if(_files.length>0){
+      const fb=document.createElement('span');
+      fb.className='queue-card-file-badge';
+      fb.title=_files.map(f=>f&&f.name||'file').join(', ');
+      fb.innerHTML=li('paperclip',11)+_files.length;
+      badges.appendChild(fb);
+    }
+    const _model=entry&&entry.model;
+    if(_model){
+      const mb=document.createElement('span');
+      mb.title='Model: '+_model;
+      // Use the app's friendly label system if available
+      const _modelLabel=(typeof _dynamicModelLabels!=='undefined'&&_dynamicModelLabels[_model])
+        ||_model.split('/').pop().replace(/^(gpt-|claude-3\.?5?-|claude-|gemini-)/,'').replace(/-\d{4}-\d{2}-\d{2}$/,'').slice(0,12);
+      mb.textContent=_modelLabel;
+      badges.appendChild(mb);
+    }
+    // Profile badge removed — drain cannot server-switch profiles so badge was misleading
+    // Delete button
+    const delBtn=document.createElement('button');
+    delBtn.className='queue-card-icon-btn';
+    delBtn.setAttribute('aria-label',typeof t==='function'?t('queued_cancel'):'Remove queued message');
+    delBtn.setAttribute('draggable','false');
+    delBtn.title='Remove from queue';
+    delBtn.innerHTML=li('x',13);
+    delBtn.onclick=()=>{
+      const liveQ=_getSessionQueue(sid,false);
+      const idx=_entryTs!=null?liveQ.findIndex(e=>e&&e._queued_at===_entryTs):i;
+      if(idx!==-1) liveQ.splice(idx,1);
+      if(!liveQ.length){delete SESSION_QUEUES[sid];try{sessionStorage.removeItem('hermes-queue-'+sid);}catch(_){}}
+      else{SESSION_QUEUES[sid]=[...liveQ];try{sessionStorage.setItem('hermes-queue-'+sid,JSON.stringify(liveQ));}catch(_){}}
+      delete _queueRenderKeys[sid];
+      updateQueueBadge(sid);
+    };
+    row.appendChild(drag);
+    row.appendChild(msgSpan);
+    if(badges.childNodes.length) row.appendChild(badges);
+    row.appendChild(delBtn);
+    inner.appendChild(row);
+  });
+}
+
+function _updateQueuePill(sid,count){
+  const pill=document.getElementById('queuePill');
+  if(!pill) return;
+  const pillOuter=pill.parentElement;  // .queue-pill-outer — same wrapper as .queue-card
+  const card=document.getElementById('queueCard');
+  const flyoutVisible=card&&card.classList.contains('visible');
+  if(count>0&&!flyoutVisible){
+    const label=typeof t==='function'?t('queued_count',count):(count===1?'1 queued':`${count} queued`);
+    pill.innerHTML=(typeof li==='function'?li('list-todo',12):'')+
+      `<span class="queue-pill-count">${label}</span>`+
+      `<span class="queue-pill-chevron">`+(typeof li==='function'?li('chevron-up',12):'▲')+`</span>`;
+    pill.title='Show queued messages';
+    if(pillOuter) pillOuter.classList.add('show');
+    pill.onclick=()=>{
+      delete _queueCollapsed[sid];
+      const c=document.getElementById('queueCard');
+      if(c){
+        c.classList.add('visible');
+        setTimeout(()=>{
+          const firstFocusable=c.querySelector('.queue-card-text, .queue-card-icon-btn');
+          if(firstFocusable) firstFocusable.focus();
+        }, 360);
+      }
+      if(pillOuter) pillOuter.classList.remove('show');
+      if(typeof scrollToBottom==='function') scrollToBottom();
+    };
+  } else {
+    if(pillOuter) pillOuter.classList.remove('show');
+    pill.onclick=null;
+  }
+}
+
+function _syncQueueTitlebar(sid,count){
+  const sub=document.getElementById('appTitlebarSub');
+  if(!sub) return;
+  if(count>0){
+    const label=typeof t==='function'?t('queued_count',count):(count===1?'1 queued':`${count} queued`);
+    sub.textContent=label;
+    sub.hidden=false;
+    sub.setAttribute('role','button');
+    sub.setAttribute('tabindex','0');
+    sub.setAttribute('aria-label',label);
+    sub.style.cursor='pointer';sub.style.color='var(--muted)';sub.style.fontWeight='600';sub.style.fontSize='11px';sub.style.background='var(--hover-bg)';sub.style.padding='2px 6px';sub.style.borderRadius='6px';sub.style.border='1px solid var(--border)';
+    const toggleQueue=()=>{
+      const activeSid=S.session&&S.session.session_id;
+      if(!activeSid) return;
+      const qCard=document.getElementById('queueCard');
+      if(!qCard) return;
+      if(qCard.classList.contains('visible')){
+        qCard.classList.remove('visible');
+        // Show pill since flyout is now hidden
+        const liveCount=_getSessionQueue(activeSid,false).length;
+        _updateQueuePill(activeSid,liveCount);
+      } else {
+        qCard.classList.add('visible');
+        // Hide pill since flyout is now showing
+        _updateQueuePill(activeSid,0);
+        if(typeof scrollToBottom==='function') scrollToBottom();
+      }
+    };
+    sub.onclick=toggleQueue;
+    sub.onkeydown=(e)=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();toggleQueue();}};
+    sub.title='Click to show/hide queue panel';
+  } else {
+    sub.textContent='';sub.hidden=true;
+    sub.removeAttribute('role');sub.removeAttribute('tabindex');sub.removeAttribute('aria-label');
+    sub.style.cssText='';
+    sub.onclick=null;sub.onkeydown=null;
+  }
+}
+
 function updateQueueBadge(sessionId){
   const sid=sessionId||(S.session&&S.session.session_id);
   const count=sid?getQueuedSessionCount(sid):0;
-  let badge=$('queueBadge');
-  if(count>0){
-    if(!badge){
-      badge=document.createElement('div');
-      badge.id='queueBadge';
-      badge.style.cssText='position:fixed;bottom:80px;right:24px;background:rgba(124,185,255,.18);border:1px solid rgba(124,185,255,.4);color:var(--blue);font-size:12px;font-weight:600;padding:6px 14px;border-radius:20px;z-index:50;pointer-events:none;backdrop-filter:blur(8px);';
-      document.body.appendChild(badge);
+  if(count>0&&S.session&&sid===S.session.session_id){
+    _renderQueueChips(sid);
+    // If card is visible, hide pill. If card is collapsed, update pill count.
+    const _cardEl=document.getElementById('queueCard');
+    _updateQueuePill(sid,(_cardEl&&_cardEl.classList.contains('visible'))?0:count);
+  } else {
+    // Always clean up per-session data
+    if(sid){delete _queueRenderKeys[sid];delete _queueCollapsed[sid];}
+    // Only wipe global DOM if this is the currently active session
+    const isActive=S.session&&sid===S.session.session_id;
+    if(isActive){
+      const card=document.getElementById('queueCard');
+      const chips=document.getElementById('queueChips');
+      if(card) card.classList.remove('visible');
+      // Defer clear until after slide-out transition so content doesn't vanish mid-animation
+      if(chips){const _chips=chips;const _card=card;setTimeout(()=>{if(!_card||!_card.classList.contains('visible'))_chips.innerHTML='';},360);}
+      const _msgsEl=document.getElementById('messages');
+      if(_msgsEl) _msgsEl.classList.remove('queue-open');
+      _updateQueuePill(sid,0);
     }
-    badge.textContent=count===1?'1 message queued':`${count} messages queued`;
-  } else if(badge) {
-    badge.remove();
   }
+  // Only update titlebar if this is the active session
+  if(!S.session||sid===S.session.session_id) _syncQueueTitlebar(sid,count);
 }
 function showToast(msg,ms,type){const el=$('toast');if(!el)return;const s=String(msg==null?'':msg);let t=type;if(!t){const low=s.toLowerCase();if(/fail|error|denied|invalid|unavailable|no active|no workspace match|no model match|no personalities/.test(low))t='error';else if(/warn|queued|takes effect|skipped|fallback/.test(low))t='warning';else if(/saved|created|imported|restored|switched|set to|updated|duplicated|moved to|renamed|deleted|complete|pinned|archived|cleared|stopped/.test(low))t='success';else t='info';}el.textContent=s;el.className='toast show '+t;clearTimeout(el._t);el._t=setTimeout(()=>{el.classList.remove('show');},ms||2800);}
 
@@ -1415,6 +1710,7 @@ function syncTopbar(){
   const vis=S.messages.filter(m=>m&&m.role&&m.role!=='tool');
   const _topbarMeta=$('topbarMeta');if(_topbarMeta)_topbarMeta.textContent=t('n_messages',vis.length);
   if(typeof syncAppTitlebar==='function') syncAppTitlebar();
+  if(typeof _syncQueueTitlebar==='function'){const _qs=S.session&&S.session.session_id;_syncQueueTitlebar(_qs,_qs?getQueuedSessionCount(_qs):0);}
   // If a profile switch just happened, apply its model rather than the session's stale value.
   // S._pendingProfileModel is set by switchToProfile() and cleared here after one application.
   const modelOverride=S._pendingProfileModel;

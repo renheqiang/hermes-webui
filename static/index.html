@@ -252,6 +252,10 @@
     </div>
     <div class="composer-wrap" id="composerWrap">
       <div class="composer-flyout">
+      <!-- Queue flyout: slides up from behind composer, same pattern as approval-card -->
+      <div id="queueCard" class="queue-card" role="region" aria-label="Queued messages" aria-live="polite">
+        <div id="queueChips" class="queue-card-inner"></div>
+      </div>
       <div class="approval-card" id="approvalCard" role="alertdialog" aria-labelledby="approvalHeading" aria-describedby="approvalDesc">
         <div class="approval-inner">
           <div class="approval-header">
@@ -297,6 +301,10 @@
           <div class="clarify-hint" id="clarifyHint" data-i18n="clarify_hint">Pick a choice, or type your own answer below.</div>
         </div>
       </div>
+      </div>
+      <!-- Queue pill outer: same positioning wrapper as .queue-card (max-width + padding) -->
+      <div class="queue-pill-outer">
+        <button id="queuePill" class="queue-pill" aria-label="Show queued messages" type="button"></button>
       </div>
       <div class="composer-box" id="composerBox">
         <div class="cmd-dropdown" id="cmdDropdown"></div>
