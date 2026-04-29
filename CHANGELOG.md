@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+### Fixed
+- **MiniMax China provider visible in model picker** — `MINIMAX_CN_API_KEY` now maps to the `minimax-cn` provider instead of being collapsed into global `minimax`; WebUI includes a static MiniMax (China) model catalog/display label so `providers.minimax-cn: {}` can render a populated picker group. (`api/config.py`, `api/providers.py`) @franksong2702 — Closes #1236
+
 ## [v0.50.237] — 2026-04-29
 
 ### Added
